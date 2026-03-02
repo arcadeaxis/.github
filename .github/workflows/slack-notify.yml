@@ -26,19 +26,19 @@ jobs:
   notify:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
+
       - name: Send to Slack
         run: |
-          # ⚠️ PUT YOUR WEBHOOK URL HERE (only in this private repo)
+          # ⚠️ PUT YOUR WEBHOOK URL HERE (NO SPACES!)
           WEBHOOK_URL="https://hooks.slack.com/services/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"
           
-          # Get changed files
-          git clone https://github.com/${{ inputs.repo_name }}.git temp_repo
-          cd temp_repo
-          git fetch --depth=1 origin ${{ inputs.sha }}
+          # Get changed files (no clone needed - already checked out)
           CHANGED_FILES=$(git diff-tree --no-commit-id --name-only -r ${{ inputs.sha }} 2>/dev/null | head -n 3)
           TOTAL_FILES=$(git diff-tree --no-commit-id --name-only -r ${{ inputs.sha }} 2>/dev/null | wc -l)
-          cd ..
-          rm -rf temp_repo
           
           # Build file list
           FILE_LIST=""
