@@ -21,6 +21,17 @@ on:
       sha:
         required: true
         type: string
+      event_type:
+        required: true
+        type: string
+      pr_number:
+        required: false
+        type: string
+        default: ""
+      pr_title:
+        required: false
+        type: string
+        default: ""
     secrets:
       SLACK_WEBHOOK:
         required: true
@@ -37,59 +48,123 @@ jobs:
       - name: Get Changed Files
         id: files
         run: |
-          FILES=$(git diff-tree --no-commit-id --name-only -r ${{ inputs.sha }} 2>/dev/null | head -n 3)
-          COUNT=$(git diff-tree --no-commit-id --name-only -r ${{ inputs.sha }} 2>/dev/null | wc -l)
-          FILE_LIST=""
+          if [ "${{ inputs.event_type }}" = "push" ]; then
+            FILES=$(git diff-tree --no-commit-id --name-only -r ${{ inputs.sha }} 2>/dev/null)
+          else
+            FILES=""
+          fi
+          
+          FILE_ARRAY=()
           while IFS= read -r file; do
             [ -z "$file" ] && continue
-            FILE_LIST="${FILE_LIST}• ${file}\n"
+            FILE_ARRAY+=("$file")
           done <<< "$FILES"
-          if [ "$COUNT" -gt 3 ]; then
-            FILE_LIST="${FILE_LIST}... and $((COUNT - 3)) more"
+          
+          TOTAL=${#FILE_ARRAY[@]}
+          DISPLAY=5
+          
+          FILE_LIST=""
+          for i in "${!FILE_ARRAY[@]}"; do
+            if [ $i -lt $DISPLAY ]; then
+              FILE_URL="https://github.com/${{ inputs.repo_name }}/blob/${{ inputs.branch_name }}/${FILE_ARRAY[$i]}"
+              FILE_LIST="${FILE_LIST}• <${FILE_URL}|${FILE_ARRAY[$i]}>\n"
+            fi
+          done
+          
+          if [ $TOTAL -gt $DISPLAY ]; then
+            REMAINING=$((TOTAL - DISPLAY))
+            FILE_LIST="${FILE_LIST}… <${{ inputs.commit_url }}|View ${REMAINING} more files>"
           fi
+          
           echo "list=$FILE_LIST" >> $GITHUB_OUTPUT
-          echo "count=$COUNT" >> $GITHUB_OUTPUT
+          echo "count=$TOTAL" >> $GITHUB_OUTPUT
 
       - name: Escape Text
         id: escape
         run: |
           MSG="${{ inputs.commit_msg }}"
           MSG="${MSG//\"/\\\"}"
-          MSG="${MSG//$'\n'/ }"
+          MSG="${MSG//$'\n'/\\n}"
+          MSG="${MSG//$'\r'/}"
           echo "msg=$MSG" >> $GITHUB_OUTPUT
+          
+          SHORT_MSG="${MSG:0:100}"
+          if [ ${#MSG} -gt 100 ]; then
+            SHORT_MSG="${SHORT_MSG}…"
+          fi
+          echo "short=$SHORT_MSG" >> $GITHUB_OUTPUT
 
-      - name: Send to Slack
+      - name: Send Main Message
+        id: slack
+        run: |
+          if [ "${{ inputs.event_type }}" = "push" ]; then
+            BLOCKS=$(cat <<EOF
+            {
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": { "type": "plain_text", "text": "🟢 New Commit Pushed", "emoji": true }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    { "type": "mrkdwn", "text": "*Repo:*\\n<https://github.com/${{ inputs.repo_name }}|${{ inputs.repo_name }}>" },
+                    { "type": "mrkdwn", "text": "*Branch:*\\n\`${{ inputs.branch_name }}\`" }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "👤 *${{ inputs.committer }}* pushed\\n📝 _${{ steps.escape.outputs.short }}_"
+                  }
+                },
+                {
+                  "type": "context",
+                  "elements": [
+                    { "type": "mrkdwn", "text": "📄 ${{ steps.files.outputs.list }}" }
+                  ]
+                }
+              ]
+            }
+            EOF
+            )
+          else
+            BLOCKS=$(cat <<EOF
+            {
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": { "type": "plain_text", "text": "🔀 PR Merged", "emoji": true }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*<${{ inputs.commit_url }}|#${{ inputs.pr_number }} ${{ inputs.pr_title }}>*\\n👤 Merged by *${{ inputs.committer }}* into \`${{ inputs.branch_name }}\`\\n✅ Checks passed • 📄 ${{ steps.files.outputs.count }} files changed"
+                  }
+                }
+              ]
+            }
+            EOF
+            )
+          fi
+          
+          RESPONSE=$(curl -s -X POST \
+            -H "Content-type: application/json" \
+            -d "$BLOCKS" \
+            "${{ secrets.SLACK_WEBHOOK }}")
+          
+          THREAD_TS=$(echo "$RESPONSE" | grep -o '"ts":"[^"]*"' | head -1 | cut -d'"' -f4)
+          echo "ts=$THREAD_TS" >> $GITHUB_OUTPUT
+
+      - name: Send Thread (If Needed)
+        if: ${{ inputs.event_type == 'push' && (steps.files.outputs.count > 5 || steps.escape.outputs.msg > 100) }}
         run: |
           curl -s -X POST \
             -H "Content-type: application/json" \
             -d "{
-              \"blocks\": [
-                {
-                  \"type\": \"header\",
-                  \"text\": { \"type\": \"plain_text\", \"text\": \"🟢 New Commit\", \"emoji\": true }
-                },
-                {
-                  \"type\": \"section\",
-                  \"fields\": [
-                    { \"type\": \"mrkdwn\", \"text\": \"*Repo:*\\n<https://github.com/${{ inputs.repo_name }}|${{ inputs.repo_name }}>\" },
-                    { \"type\": \"mrkdwn\", \"text\": \"*Branch:*\\n\`${{ inputs.branch_name }}\`\" }
-                  ]
-                },
-                {
-                  \"type\": \"section\",
-                  \"text\": {
-                    \"type\": \"mrkdwn\",
-                    \"text\": \"👤 *${{ inputs.committer }}* pushed\\n📝 ${{ steps.escape.outputs.msg }}\"
-                  }
-                },
-                {
-                  \"type\": \"context\",
-                  \"elements\": [
-                    { \"type\": \"mrkdwn\", \"text\": \"📄 ${{ steps.files.outputs.list }}\" }
-                  ]
-                }
-              ]
+              \"thread_ts\": \"${{ steps.slack.outputs.ts }}\",
+              \"text\": \"🧵 *Full Commit Details*\\n\\n*Message:*\\n${{ steps.escape.outputs.msg }}\\n\\n*All Files Changed:*\\n$(git diff-tree --no-commit-id --name-only -r ${{ inputs.sha }} 2>/dev/null | sed 's/^/• /')\"
             }" \
             "${{ secrets.SLACK_WEBHOOK }}"
-          
-          echo "✅ Done!"
