@@ -21,6 +21,9 @@ on:
       sha:
         required: true
         type: string
+    secrets:
+      SLACK_WEBHOOK:
+        required: true
 
 jobs:
   notify:
