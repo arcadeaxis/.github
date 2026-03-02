@@ -141,4 +141,22 @@ jobs:
           else
             curl -s -X POST -H "Content-type: application/json" -d @- "$WEBHOOK" <<PAYLOAD
           {
-           
+            "blocks": [
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "*🔀 PR Merged*\n\n*<${{ inputs.commit_url }}|#${{ inputs.pr_number }} ${{ inputs.pr_title }}>*\n\n👤 Merged by *${{ inputs.committer }}* into \`${{ inputs.branch_name }}\`\n\n✅ Checks passed • 📄 ${FCOUNT} files changed"
+                }
+              }
+            ]
+          }
+          PAYLOAD
+          fi
+
+      - name: Send Thread (If Many Files)
+        if: ${{ inputs.event_type == 'push' && steps.files.outputs.count > 5 }}
+        run: |
+          WEBHOOK="${{ secrets.SLACK_WEBHOOK }}"
+          AFILES=$(echo "${{ steps.files.outputs.all }}" | base64 -d)
+          curl -s -X POST -H "Content-type: application/json" -d "{\"thread_ts\":\"${{ steps.slack.outputs.ts }}\",\"text\":\"🧵 *All Files Changed:*\\n${AFILES}\"}" "$WEBHOOK"
