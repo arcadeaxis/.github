@@ -67,7 +67,6 @@ jobs:
             REMAINING=$((TOTAL - 5))
             FILE_LIST="${FILE_LIST}… <${{ inputs.commit_url }}|View ${REMAINING} more>"
           fi
-          # Use base64 to avoid escaping issues
           echo "list=$(echo -n "$FILE_LIST" | base64 -w0)" >> $GITHUB_OUTPUT
           echo "count=$TOTAL" >> $GITHUB_OUTPUT
           echo "all=$(echo -n "$ALL_FILES" | base64 -w0)" >> $GITHUB_OUTPUT
@@ -76,82 +75,13 @@ jobs:
         run: |
           WEBHOOK="${{ secrets.SLACK_WEBHOOK }}"
           TYPE="${{ inputs.event_type }}"
-          
-          # Decode file lists
           FLIST=$(echo "${{ steps.files.outputs.list }}" | base64 -d)
-          AFILES=$(echo "${{ steps.files.outputs.all }}" | base64 -d)
           FCOUNT="${{ steps.files.outputs.count }}"
           
           if [ "$TYPE" = "push" ]; then
-            curl -s -X POST -H "Content-type: application/json" -d @- "$WEBHOOK" <<PAYLOAD
-          {
-            "blocks": [
-              {
-                "type": "section",
-                "text": {
-                  "type": "mrkdwn",
-                  "text": "*🟢 New Commit Pushed*"
-                }
-              },
-              {
-                "type": "divider"
-              },
-              {
-                "type": "section",
-                "fields": [
-                  {
-                    "type": "mrkdwn",
-                    "text": "*Repository:*\n<https://github.com/${{ inputs.repo_name }}|${{ inputs.repo_name }}>"
-                  },
-                  {
-                    "type": "mrkdwn",
-                    "text": "*Branch:*\n`${{ inputs.branch_name }}`"
-                  }
-                ]
-              },
-              {
-                "type": "section",
-                "text": {
-                  "type": "mrkdwn",
-                  "text": "*Author:*\n👤 ${{ inputs.committer }}"
-                }
-              },
-              {
-                "type": "section",
-                "text": {
-                  "type": "mrkdwn",
-                  "text": "*Commit Message:*\n📝 ${{ inputs.commit_msg }}"
-                }
-              },
-              {
-                "type": "divider"
-              },
-              {
-                "type": "context",
-                "elements": [
-                  {
-                    "type": "mrkdwn",
-                    "text": "📄 Files:\n${FLIST}"
-                  }
-                ]
-              }
-            ]
-          }
-          PAYLOAD
+            curl -s -X POST -H "Content-type: application/json" -d "{\"blocks\":[{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*🟢 New Commit Pushed*\"}},{\"type\":\"divider\"},{\"type\":\"section\",\"fields\":[{\"type\":\"mrkdwn\",\"text\":\"*Repository:*\\n<https://github.com/${{ inputs.repo_name }}|${{ inputs.repo_name }}>\"},{\"type\":\"mrkdwn\",\"text\":\"*Branch:*\\n\`${{ inputs.branch_name }}\`\"}]},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*Author:*\\n👤 ${{ inputs.committer }}\"}},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*Commit Message:*\\n📝 ${{ inputs.commit_msg }}\"}},{\"type\":\"divider\"},{\"type\":\"context\",\"elements\":[{\"type\":\"mrkdwn\",\"text\":\"📄 Files:\\n${FLIST}\"}]}]}" "$WEBHOOK"
           else
-            curl -s -X POST -H "Content-type: application/json" -d @- "$WEBHOOK" <<PAYLOAD
-          {
-            "blocks": [
-              {
-                "type": "section",
-                "text": {
-                  "type": "mrkdwn",
-                  "text": "*🔀 PR Merged*\n\n*<${{ inputs.commit_url }}|#${{ inputs.pr_number }} ${{ inputs.pr_title }}>*\n\n👤 Merged by *${{ inputs.committer }}* into \`${{ inputs.branch_name }}\`\n\n✅ Checks passed • 📄 ${FCOUNT} files changed"
-                }
-              }
-            ]
-          }
-          PAYLOAD
+            curl -s -X POST -H "Content-type: application/json" -d "{\"blocks\":[{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*🔀 PR Merged*\\n\\n*<${{ inputs.commit_url }}|#${{ inputs.pr_number }} ${{ inputs.pr_title }}>*\\n\\n👤 Merged by *${{ inputs.committer }}* into \`${{ inputs.branch_name }}\`\\n\\n✅ Checks passed • 📄 ${FCOUNT} files changed\"}]}]}" "$WEBHOOK"
           fi
 
       - name: Send Thread (If Many Files)
@@ -159,4 +89,4 @@ jobs:
         run: |
           WEBHOOK="${{ secrets.SLACK_WEBHOOK }}"
           AFILES=$(echo "${{ steps.files.outputs.all }}" | base64 -d)
-          curl -s -X POST -H "Content-type: application/json" -d "{\"thread_ts\":\"${{ steps.slack.outputs.ts }}\",\"text\":\"🧵 *All Files Changed:*\\n${AFILES}\"}" "$WEBHOOK"
+          curl -s -X POST -H "Content-type: application/json" -d "{\"text\":\"🧵 *All Files Changed:*\\n${AFILES}\"}" "$WEBHOOK"
