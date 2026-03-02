@@ -1,0 +1,103 @@
+name: Slack Notify (Central)
+
+on:
+  workflow_call:
+    inputs:
+      repo_name:
+        required: true
+        type: string
+      branch_name:
+        required: true
+        type: string
+        default: main
+      commit_msg:
+        required: true
+        type: string
+      committer:
+        required: true
+        type: string
+      commit_url:
+        required: true
+        type: string
+      sha:
+        required: true
+        type: string
+      event_type:
+        required: true
+        type: string
+      pr_number:
+        required: false
+        type: string
+        default: ""
+      pr_title:
+        required: false
+        type: string
+        default: ""
+    secrets:
+      SLACK_WEBHOOK:
+        required: true
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 2
+
+      - name: Get Changed Files
+        id: files
+        run: |
+          FILES=$(git diff-tree --no-commit-id --name-only -r ${{ inputs.sha }} 2>/dev/null || echo "")
+          TOTAL=0
+          FILE_LIST=""
+          COUNT=0
+          ALL_FILES=""
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            TOTAL=$((TOTAL + 1))
+            ALL_FILES="${ALL_FILES}• ${file}\\n"
+            if [ $COUNT -lt 5 ]; then
+              FILE_URL="https://github.com/${{ inputs.repo_name }}/blob/${{ inputs.branch_name }}/${file}"
+              FILE_LIST="${FILE_LIST}• <${FILE_URL}|${file}>\\n"
+              COUNT=$((COUNT + 1))
+            fi
+          done <<< "$FILES"
+          if [ $TOTAL -gt 5 ]; then
+            REMAINING=$((TOTAL - 5))
+            FILE_LIST="${FILE_LIST}… <${{ inputs.commit_url }}|View ${REMAINING} more>"
+          fi
+          echo "list=${FILE_LIST}" >> $GITHUB_OUTPUT
+          echo "count=${TOTAL}" >> $GITHUB_OUTPUT
+          echo "all=${ALL_FILES}" >> $GITHUB_OUTPUT
+
+      - name: Send Main Message
+        id: slack
+        run: |
+          WEBHOOK="${{ secrets.SLACK_WEBHOOK }}"
+          REPO="${{ inputs.repo_name }}"
+          BRANCH="${{ inputs.branch_name }}"
+          USER="${{ inputs.committer }}"
+          MSG="${{ inputs.commit_msg }}"
+          URL="${{ inputs.commit_url }}"
+          TYPE="${{ inputs.event_type }}"
+          PRNUM="${{ inputs.pr_number }}"
+          PRTITLE="${{ inputs.pr_title }}"
+          FLIST="${{ steps.files.outputs.list }}"
+          FCOUNT="${{ steps.files.outputs.count }}"
+          
+          if [ "$TYPE" = "push" ]; then
+            curl -s -X POST -H "Content-type: application/json" -d "{\"blocks\":[{\"type\":\"header\",\"text\":{\"type\":\"plain_text\",\"text\":\"🟢 New Commit Pushed\",\"emoji\":true}},{\"type\":\"section\",\"fields\":[{\"type\":\"mrkdwn\",\"text\":\"*Repo:*\\n<https://github.com/${REPO}|${REPO}>\"},{\"type\":\"mrkdwn\",\"text\":\"*Branch:*\\n\`${BRANCH}\`\"}]},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"👤 *${USER}* pushed\\n📝 _${MSG:0:80}_\"}},{\"type\":\"context\",\"elements\":[{\"type\":\"mrkdwn\",\"text\":\"📄 ${FLIST}\"}]}]}" "$WEBHOOK"
+          else
+            curl -s -X POST -H "Content-type: application/json" -d "{\"blocks\":[{\"type\":\"header\",\"text\":{\"type\":\"plain_text\",\"text\":\"🔀 PR Merged\",\"emoji\":true}},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*<${URL}|#${PRNUM} ${PRTITLE}>*\\n👤 Merged by *${USER}* into \`${BRANCH}\`\\n✅ Checks passed • 📄 ${FCOUNT} files changed\"}]}]}" "$WEBHOOK"
+          fi
+
+      - name: Send Thread (If Many Files)
+        if: ${{ inputs.event_type == 'push' && steps.files.outputs.count > 5 }}
+        run: |
+          WEBHOOK="${{ secrets.SLACK_WEBHOOK }}"
+          MSG="${{ inputs.commit_msg }}"
+          AFILES="${{ steps.files.outputs.all }}"
+          TS="${{ steps.slack.outputs.ts }}"
+          curl -s -X POST -H "Content-type: application/json" -d "{\"thread_ts\":\"$TS\",\"text\":\"🧵 *Full Details*\\n\\n*Message:* ${MSG}\\n\\n*All Files:*\\n${AFILES}\"}" "$WEBHOOK"
