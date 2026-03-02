@@ -31,41 +31,11 @@ jobs:
         with:
           fetch-depth: 2
 
-      - name: Get Changed Files
-        id: files
-        run: |
-          FILES=$(git diff-tree --no-commit-id --name-only -r ${{ inputs.sha }} 2>/dev/null || echo "")
-          COUNT=$(echo "$FILES" | wc -l)
-          echo "count=$COUNT" >> $GITHUB_OUTPUT
-          echo "files=$FILES" >> $GITHUB_OUTPUT
-
       - name: Send to Slack
         run: |
-          WEBHOOK_URL="https://hooks.slack.com/services/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"
+          curl -s -X POST \
+            -H "Content-type: application/json" \
+            -d "{\"text\":\"🟢 Commit in ${{ inputs.repo_name }} by ${{ inputs.committer }}: ${{ inputs.commit_msg }}\"}" \
+            "${{ secrets.SLACK_WEBHOOK }}"
           
-          FILE_COUNT="${{ steps.files.outputs.count }}"
-          
-          curl -s -X POST -H 'Content-type: application/json' --data "{
-            \"blocks\": [
-              {
-                \"type\": \"header\",
-                \"text\": { \"type\": \"plain_text\", \"text\": \"🟢 New Commit\", \"emoji\": true }
-              },
-              {
-                \"type\": \"section\",
-                \"fields\": [
-                  { \"type\": \"mrkdwn\", \"text\": \"*Repo:*\\n<https://github.com/${{ inputs.repo_name }}|${{ inputs.repo_name }}>\" },
-                  { \"type\": \"mrkdwn\", \"text\": \"*Branch:*\\n\`${{ inputs.branch_name }}\`\" }
-                ]
-              },
-              {
-                \"type\": \"section\",
-                \"text\": {
-                  \"type\": \"mrkdwn\",
-                  \"text\": \"👤 *${{ inputs.committer }}* pushed\\n📝 ${{ inputs.commit_msg }}"
-                }
-              }
-            ]
-          }" "$WEBHOOK_URL"
-          
-          echo "✅ Slack notification sent!"
+          echo "✅ Done!"
