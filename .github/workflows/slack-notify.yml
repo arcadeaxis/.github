@@ -1,0 +1,87 @@
+name: Slack Notify (Central)
+
+on:
+  workflow_call:
+    inputs:
+      repo_name:
+        required: true
+        type: string
+      branch_name:
+        required: true
+        type: string
+      commit_msg:
+        required: true
+        type: string
+      committer:
+        required: true
+        type: string
+      commit_url:
+        required: true
+        type: string
+      sha:
+        required: true
+        type: string
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send to Slack
+        run: |
+          # ⚠️ PUT YOUR WEBHOOK URL HERE (only in this private repo)
+          WEBHOOK_URL="https://hooks.slack.com/services/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"
+          
+          # Get changed files
+          git clone https://github.com/${{ inputs.repo_name }}.git temp_repo
+          cd temp_repo
+          git fetch --depth=1 origin ${{ inputs.sha }}
+          CHANGED_FILES=$(git diff-tree --no-commit-id --name-only -r ${{ inputs.sha }} 2>/dev/null | head -n 3)
+          TOTAL_FILES=$(git diff-tree --no-commit-id --name-only -r ${{ inputs.sha }} 2>/dev/null | wc -l)
+          cd ..
+          rm -rf temp_repo
+          
+          # Build file list
+          FILE_LIST=""
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            FILE_URL="https://github.com/${{ inputs.repo_name }}/blob/${{ inputs.branch_name }}/${file}"
+            FILE_LIST="${FILE_LIST}• <${FILE_URL}|${file}>\n"
+          done <<< "$CHANGED_FILES"
+          
+          if [ "$TOTAL_FILES" -gt 3 ]; then
+            FILE_LIST="${FILE_LIST}... <${{ inputs.commit_url }}|View ${TOTAL_FILES} more>"
+          fi
+
+          # Send Main Message
+          RESPONSE=$(curl -s -X POST -H 'Content-type: application/json' \
+            --data "{
+              \"blocks\": [
+                {
+                  \"type\": \"header\",
+                  \"text\": { \"type\": \"plain_text\", \"text\": \"🟢 New Commit\", \"emoji\": true }
+                },
+                {
+                  \"type\": \"section\",
+                  \"fields\": [
+                    { \"type\": \"mrkdwn\", \"text\": \"*Repo:*\\n<https://github.com/${{ inputs.repo_name }}|${{ inputs.repo_name }}>\" },
+                    { \"type\": \"mrkdwn\", \"text\": \"*Branch:*\\n\`${{ inputs.branch_name }}\`\" }
+                  ]
+                },
+                {
+                  \"type\": \"section\",
+                  \"text\": {
+                    \"type\": \"mrkdwn\",
+                    \"text\": \"👤 *${{ inputs.committer }}* pushed\\n📝 ${{ inputs.commit_msg }}"
+                  }
+                },
+                {
+                  \"type\": \"context\",
+                  \"elements\": [
+                    { \"type\": \"mrkdwn\", \"text\": \"📄 ${FILE_LIST}\" }
+                  ]
+                }
+              ]
+            }" \
+            "$WEBHOOK_URL")
+          
+          echo "✅ Slack notification sent!"
