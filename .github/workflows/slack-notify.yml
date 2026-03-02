@@ -34,11 +34,62 @@ jobs:
         with:
           fetch-depth: 2
 
+      - name: Get Changed Files
+        id: files
+        run: |
+          FILES=$(git diff-tree --no-commit-id --name-only -r ${{ inputs.sha }} 2>/dev/null | head -n 3)
+          COUNT=$(git diff-tree --no-commit-id --name-only -r ${{ inputs.sha }} 2>/dev/null | wc -l)
+          FILE_LIST=""
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            FILE_LIST="${FILE_LIST}• ${file}\n"
+          done <<< "$FILES"
+          if [ "$COUNT" -gt 3 ]; then
+            FILE_LIST="${FILE_LIST}... and $((COUNT - 3)) more"
+          fi
+          echo "list=$FILE_LIST" >> $GITHUB_OUTPUT
+          echo "count=$COUNT" >> $GITHUB_OUTPUT
+
+      - name: Escape Text
+        id: escape
+        run: |
+          MSG="${{ inputs.commit_msg }}"
+          MSG="${MSG//\"/\\\"}"
+          MSG="${MSG//$'\n'/ }"
+          echo "msg=$MSG" >> $GITHUB_OUTPUT
+
       - name: Send to Slack
         run: |
           curl -s -X POST \
             -H "Content-type: application/json" \
-            -d "{\"text\":\"🟢 Commit in ${{ inputs.repo_name }} by ${{ inputs.committer }}: ${{ inputs.commit_msg }}\"}" \
+            -d "{
+              \"blocks\": [
+                {
+                  \"type\": \"header\",
+                  \"text\": { \"type\": \"plain_text\", \"text\": \"🟢 New Commit\", \"emoji\": true }
+                },
+                {
+                  \"type\": \"section\",
+                  \"fields\": [
+                    { \"type\": \"mrkdwn\", \"text\": \"*Repo:*\\n<https://github.com/${{ inputs.repo_name }}|${{ inputs.repo_name }}>\" },
+                    { \"type\": \"mrkdwn\", \"text\": \"*Branch:*\\n\`${{ inputs.branch_name }}\`\" }
+                  ]
+                },
+                {
+                  \"type\": \"section\",
+                  \"text\": {
+                    \"type\": \"mrkdwn\",
+                    \"text\": \"👤 *${{ inputs.committer }}* pushed\\n📝 ${{ steps.escape.outputs.msg }}\"
+                  }
+                },
+                {
+                  \"type\": \"context\",
+                  \"elements\": [
+                    { \"type\": \"mrkdwn\", \"text\": \"📄 ${{ steps.files.outputs.list }}\" }
+                  ]
+                }
+              ]
+            }" \
             "${{ secrets.SLACK_WEBHOOK }}"
           
           echo "✅ Done!"
