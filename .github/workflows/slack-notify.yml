@@ -75,13 +75,24 @@ jobs:
         run: |
           WEBHOOK="${{ secrets.SLACK_WEBHOOK }}"
           TYPE="${{ inputs.event_type }}"
-          FLIST=$(echo "${{ steps.files.outputs.list }}" | base64 -d)
+          FLIST=$(echo "${{ steps.files.outputs.list }}" | base64 -d 2>/dev/null || echo "")
           FCOUNT="${{ steps.files.outputs.count }}"
-          
+          REPO="${{ inputs.repo_name }}"
+          BRANCH="${{ inputs.branch_name }}"
+          USER="${{ inputs.committer }}"
+          MSG="${{ inputs.commit_msg }}"
+          URL="${{ inputs.commit_url }}"
+          PRNUM="${{ inputs.pr_number }}"
+          PRTITLE="${{ inputs.pr_title }}"
+          MSG="${MSG//\\/\\\\}"
+          MSG="${MSG//\"/\\\"}"
+          MSG="${MSG//$'\n'/ }"
+          PRTITLE="${PRTITLE//\\/\\\\}"
+          PRTITLE="${PRTITLE//\"/\\\"}"
           if [ "$TYPE" = "push" ]; then
-            curl -s -X POST -H "Content-type: application/json" -d "{\"blocks\":[{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*🟢 New Commit Pushed*\"}},{\"type\":\"divider\"},{\"type\":\"section\",\"fields\":[{\"type\":\"mrkdwn\",\"text\":\"*Repository:*\\n<https://github.com/${{ inputs.repo_name }}|${{ inputs.repo_name }}>\"},{\"type\":\"mrkdwn\",\"text\":\"*Branch:*\\n\`${{ inputs.branch_name }}\`\"}]},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*Author:*\\n👤 ${{ inputs.committer }}\"}},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*Commit Message:*\\n📝 ${{ inputs.commit_msg }}\"}},{\"type\":\"divider\"},{\"type\":\"context\",\"elements\":[{\"type\":\"mrkdwn\",\"text\":\"📄 Files:\\n${FLIST}\"}]}]}" "$WEBHOOK"
+            curl -s -X POST -H "Content-type: application/json" -d "{\"blocks\":[{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*🟢 New Commit Pushed*\"}},{\"type\":\"divider\"},{\"type\":\"section\",\"fields\":[{\"type\":\"mrkdwn\",\"text\":\"*Repository:*\\n<https://github.com/${REPO}|${REPO}>\"},{\"type\":\"mrkdwn\",\"text\":\"*Branch:*\\n\`${BRANCH}\`\"}]},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*Author:*\\n👤 ${USER}\"}},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*Commit Message:*\\n📝 ${MSG}\"}},{\"type\":\"divider\"},{\"type\":\"context\",\"elements\":[{\"type\":\"mrkdwn\",\"text\":\"📄 Files:\\n${FLIST}\"}]}]}" "$WEBHOOK"
           else
-            curl -s -X POST -H "Content-type: application/json" -d "{\"blocks\":[{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*🔀 PR Merged*\\n\\n*<${{ inputs.commit_url }}|#${{ inputs.pr_number }} ${{ inputs.pr_title }}>*\\n\\n👤 Merged by *${{ inputs.committer }}* into \`${{ inputs.branch_name }}\`\\n\\n✅ Checks passed • 📄 ${FCOUNT} files changed\"}]}]}" "$WEBHOOK"
+            curl -s -X POST -H "Content-type: application/json" -d "{\"blocks\":[{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*🔀 PR Merged*\\n\\n*<${URL}|#${PRNUM} ${PRTITLE}>*\\n\\n👤 Merged by *${USER}* into \`${BRANCH}\`\\n\\n✅ Checks passed • 📄 ${FCOUNT:-0} files changed\"}]}]}" "$WEBHOOK"
           fi
 
       - name: Send Thread (If Many Files)
