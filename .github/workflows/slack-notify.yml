@@ -110,4 +110,7 @@ jobs:
         run: |
           WEBHOOK="${{ secrets.SLACK_WEBHOOK }}"
           AFILES=$(echo "${{ steps.files.outputs.all }}" | base64 -d)
-          curl -s -X POST -H "Content-type: application/json" -d "{\"text\":\"🧵 *All Files Changed:*\\n${AFILES}\"}" "$WEBHOOK"
+          TS="${{ steps.slack.outputs.ts }}"
+          curl -s -X POST -H "Content-type: application/json" \
+            -d "{\"thread_ts\":\"$TS\",\"text\":\"🧵 *All Files Changed:*\\n${AFILES}\"}" \
+            "$WEBHOOK"
