@@ -101,16 +101,18 @@ jobs:
               "$WEBHOOK")
           fi
           
-          # Extract timestamp from response
-          TS=$(echo "$RESPONSE" | grep -o '"ts":"[^"]*"' | head -1 | cut -d'"' -f4)
+          echo "Response: $RESPONSE"
+          TS=$(echo "$RESPONSE" | sed -n 's/.*"ts":"\([^"]*\)".*/\1/p' | head -1)
+          echo "Timestamp: $TS"
           echo "ts=$TS" >> $GITHUB_OUTPUT
 
       - name: Send Thread (If Many Files)
-        if: ${{ inputs.event_type == 'push' && steps.files.outputs.count > 5 }}
+        if: ${{ inputs.event_type == 'push' && steps.files.outputs.count > 5 && steps.slack.outputs.ts != '' }}
         run: |
           WEBHOOK="${{ secrets.SLACK_WEBHOOK }}"
           AFILES=$(echo "${{ steps.files.outputs.all }}" | base64 -d)
           TS="${{ steps.slack.outputs.ts }}"
+          echo "Sending thread with ts: $TS"
           curl -s -X POST -H "Content-type: application/json" \
             -d "{\"thread_ts\":\"$TS\",\"text\":\"🧵 *All Files Changed:*\\n${AFILES}\"}" \
             "$WEBHOOK"
