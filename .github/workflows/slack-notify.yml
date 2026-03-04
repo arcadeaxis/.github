@@ -72,6 +72,7 @@ jobs:
           echo "all=$(echo -n "$ALL_FILES" | base64 -w0)" >> $GITHUB_OUTPUT
 
       - name: Send to Slack
+        id: slack
         run: |
           WEBHOOK="${{ secrets.SLACK_WEBHOOK }}"
           TYPE="${{ inputs.event_type }}"
@@ -89,11 +90,20 @@ jobs:
           MSG="${MSG//$'\n'/ }"
           PRTITLE="${PRTITLE//\\/\\\\}"
           PRTITLE="${PRTITLE//\"/\\\"}"
+          
           if [ "$TYPE" = "push" ]; then
-            curl -s -X POST -H "Content-type: application/json" -d "{\"blocks\":[{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*🟢 New Commit Pushed*\"}},{\"type\":\"divider\"},{\"type\":\"section\",\"fields\":[{\"type\":\"mrkdwn\",\"text\":\"*Repository:*\\n<https://github.com/${REPO}|${REPO}>\"},{\"type\":\"mrkdwn\",\"text\":\"*Branch:*\\n\`${BRANCH}\`\"}]},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*Author:*\\n👤 ${USER}\"}},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*Commit Message:*\\n📝 ${MSG}\"}},{\"type\":\"divider\"},{\"type\":\"context\",\"elements\":[{\"type\":\"mrkdwn\",\"text\":\"📄 Files:\\n${FLIST}\"}]}]}" "$WEBHOOK"
+            RESPONSE=$(curl -s -X POST -H "Content-type: application/json" \
+              -d "{\"blocks\":[{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*🟢 New Commit Pushed*\"}},{\"type\":\"divider\"},{\"type\":\"section\",\"fields\":[{\"type\":\"mrkdwn\",\"text\":\"*Repository:*\\n<https://github.com/${REPO}|${REPO}>\"},{\"type\":\"mrkdwn\",\"text\":\"*Branch:*\\n\`${BRANCH}\`\"}]},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*Author:*\\n👤 ${USER}\"}},{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*Commit Message:*\\n📝 ${MSG}\"}},{\"type\":\"divider\"},{\"type\":\"context\",\"elements\":[{\"type\":\"mrkdwn\",\"text\":\"📄 Files:\\n${FLIST}\"}]}]}" \
+              "$WEBHOOK")
           else
-            curl -s -X POST -H "Content-type: application/json" -d "{\"blocks\":[{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*🔀 PR Merged*\\n\\n*<${URL}|#${PRNUM} ${PRTITLE}>*\\n\\n👤 Merged by *${USER}* into \`${BRANCH}\`\\n\\n✅ Checks passed • 📄 ${FCOUNT:-0} files changed\"}]}]}" "$WEBHOOK"
+            RESPONSE=$(curl -s -X POST -H "Content-type: application/json" \
+              -d "{\"blocks\":[{\"type\":\"section\",\"text\":{\"type\":\"mrkdwn\",\"text\":\"*🔀 PR Merged*\\n\\n*<${URL}|#${PRNUM} ${PRTITLE}>*\\n\\n👤 Merged by *${USER}* into \`${BRANCH}\`\\n\\n✅ Checks passed • 📄 ${FCOUNT:-0} files changed\"}]}]}" \
+              "$WEBHOOK")
           fi
+          
+          # Extract timestamp from response
+          TS=$(echo "$RESPONSE" | grep -o '"ts":"[^"]*"' | head -1 | cut -d'"' -f4)
+          echo "ts=$TS" >> $GITHUB_OUTPUT
 
       - name: Send Thread (If Many Files)
         if: ${{ inputs.event_type == 'push' && steps.files.outputs.count > 5 }}
